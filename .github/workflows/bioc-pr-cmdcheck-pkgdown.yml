@@ -100,7 +100,7 @@ jobs:
       fail-fast: false
       matrix: ${{ fromJson(needs.set-matrix.outputs.matrix) }}
 
-    container: bioconductor/bioconductor_docker:${{ matrix.docker_tag }}
+    container: ghcr.io/bioconductor/bioconductor_docker:${{ matrix.docker_tag }}
 
     steps:
       - name: Checkout Repository
