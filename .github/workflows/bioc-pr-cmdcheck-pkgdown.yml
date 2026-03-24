@@ -53,18 +53,34 @@ jobs:
         id: branch
         shell: bash
         run: |
-          echo "ref_name=${GITHUB_REF_NAME}" >> "$GITHUB_OUTPUT"
-          if [[ "${GITHUB_REF_NAME}" =~ ^RELEASE_ ]]; then
+          # For PRs, use the target branch (base_ref). For pushes, use ref_name.
+          if [[ "${GITHUB_EVENT_NAME}" == "pull_request" ]]; then
+            REF_NAME="${{ github.base_ref }}"
+          else
+            REF_NAME="${GITHUB_REF_NAME}"
+          fi
+
+          echo "ref_name=${REF_NAME}" >> "$GITHUB_OUTPUT"
+
+          if [[ "${REF_NAME}" =~ ^RELEASE_ ]]; then
             echo "is_release_branch=true" >> "$GITHUB_OUTPUT"
           else
             echo "is_release_branch=false" >> "$GITHUB_OUTPUT"
           fi
 
-      - name: Set Matrix Bioconductor Version
+      - name: Set Matrix (docker tag + checkout ref)
         id: set
         shell: bash
         run: |
-          MATRIX="{\"include\":[{\"bioc_version\":\"${GITHUB_REF_NAME}\"}]}"
+          DOCKER_TAG="devel"
+
+          if [[ "${GITHUB_EVENT_NAME}" == "pull_request" ]]; then
+            CHECKOUT_REF="${{ github.event.pull_request.head.sha }}"
+          else
+            CHECKOUT_REF="${GITHUB_REF_NAME}"
+          fi
+
+          MATRIX="{\"include\":[{\"docker_tag\":\"${DOCKER_TAG}\",\"checkout_ref\":\"${CHECKOUT_REF}\"}]}"
           echo "matrix=$MATRIX" >> "$GITHUB_OUTPUT"
 
       - name: Check for Dockerfile
@@ -83,13 +99,14 @@ jobs:
     strategy:
       fail-fast: false
       matrix: ${{ fromJson(needs.set-matrix.outputs.matrix) }}
-    container: bioconductor/bioconductor_docker:${{ matrix.bioc_version }}
+
+    container: bioconductor/bioconductor_docker:${{ matrix.docker_tag }}
 
     steps:
       - name: Checkout Repository
         uses: actions/checkout@v4
         with:
-          ref: ${{ matrix.bioc_version }}
+          ref: ${{ matrix.checkout_ref }}
 
       - name: Query dependencies
         run: |
@@ -101,9 +118,9 @@ jobs:
         uses: actions/cache@v4
         with:
           path: /usr/local/lib/R/site-library
-          key: ${{ runner.os }}-r-${{ matrix.bioc_version }}-${{ hashFiles('.github/depends.Rds') }}
+          key: ${{ runner.os }}-r-${{ matrix.checkout_ref }}-${{ hashFiles('.github/depends.Rds') }}
           restore-keys: |
-            ${{ runner.os }}-r-${{ matrix.bioc_version }}-
+            ${{ runner.os }}-r-${{ matrix.checkout_ref }}-
 
       - name: Install GPG
         if: ${{ github.ref == 'refs/heads/devel' && github.event_name != 'pull_request' }}
