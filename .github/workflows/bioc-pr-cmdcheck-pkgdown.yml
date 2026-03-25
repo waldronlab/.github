@@ -110,7 +110,7 @@ jobs:
 
       - name: Query dependencies
         run: |
-          options(repos = c(CRAN = Sys.getenv("CRAN", "https://p3m.dev/cran/__linux__/noble/latest")))
+          options(repos = c(CRAN = Sys.getenv("CRAN")))
           BiocManager::install(c("remotes", "rcmdcheck", "BiocCheck", "covr"))
           saveRDS(remotes::dev_package_deps(dependencies = TRUE), ".github/depends.Rds", version = 2)
         shell: Rscript {0}
@@ -129,7 +129,7 @@ jobs:
 
       - name: Install Dependencies
         run: |
-          options(repos = c(CRAN = Sys.getenv("CRAN", "https://p3m.dev/cran/__linux__/noble/latest")))
+          options(repos = c(CRAN = Sys.getenv("CRAN")))
           remotes::install_deps(dependencies = TRUE, repos = BiocManager::repositories())
           BiocManager::install(ask = FALSE, update = TRUE)
         shell: Rscript {0}
