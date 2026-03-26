@@ -27,7 +27,7 @@ Call this workflow from a repository in the organization with:
 ```yaml
 jobs:
   bioc-check:
-    uses: waldronlab/.github/.github/workflows/bioc-pr-cmdcheck-pkgdown.yml@main
+    uses: waldronlab/.github/.github/workflows/bioc-pr-cmdcheck-pkgdown.yml@devel
     secrets:
       CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
       DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
