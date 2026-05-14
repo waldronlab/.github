@@ -124,7 +124,7 @@ jobs:
         run: |
           desc <- read.dcf("DESCRIPTION")
           if (!("Version" %in% colnames(desc))) {
-            stop("DESCRIPTION is missing required 'Version' field.")
+            stop("DESCRIPTION file is missing the required Version field; workflow cannot proceed.")
           }
           pkg_version <- as.character(desc[1, "Version"])
           output_file <- Sys.getenv("GITHUB_OUTPUT")
@@ -142,8 +142,7 @@ jobs:
             cff_version <- tryCatch(
               as.character(cffr::cff_read("CITATION.cff")$version),
               error = function(e) {
-                warning("Unable to parse CITATION.cff: ", conditionMessage(e))
-                ""
+                stop("Unable to parse CITATION.cff: ", conditionMessage(e))
               }
             )
             version_match <- nzchar(cff_version) && identical(pkg_version, cff_version)
@@ -188,7 +187,7 @@ jobs:
           git config --local user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add CITATION.cff
           if git diff --cached --quiet; then
-            echo "No CITATION.cff changes to commit"
+            echo "::warning::No CITATION.cff changes detected after attempted version update"
             exit 0
           fi
           git commit -m "Update CITATION.cff version to match DESCRIPTION"
