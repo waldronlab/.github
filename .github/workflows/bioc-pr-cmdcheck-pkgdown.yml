@@ -96,6 +96,8 @@ jobs:
   check:
     needs: set-matrix
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
     strategy:
       fail-fast: false
       matrix: ${{ fromJson(needs.set-matrix.outputs.matrix) }}
@@ -111,9 +113,67 @@ jobs:
       - name: Query dependencies
         run: |
           options(repos = c(CRAN = Sys.getenv("CRAN")))
-          BiocManager::install(c("remotes", "rcmdcheck", "BiocCheck", "covr"))
+          BiocManager::install(c("remotes", "rcmdcheck", "BiocCheck", "covr", "cffr", "V8"))
           saveRDS(remotes::dev_package_deps(dependencies = TRUE), ".github/depends.Rds", version = 2)
         shell: Rscript {0}
+
+      - name: Check CITATION.cff version matches DESCRIPTION
+        id: citation_check
+        if: ${{ github.event_name != 'pull_request' }}
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          if [[ ! -f "CITATION.cff" ]]; then
+            echo "has_cff=false" >> "$GITHUB_OUTPUT"
+            echo "version_match=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          PKG_VERSION=$(grep '^Version:' DESCRIPTION | sed 's/^Version:[[:space:]]*//')
+          CFF_VERSION=$(sed -nE "s/^version:[[:space:]]*['\"]?([^'\"]+)['\"]?[[:space:]]*$/\1/p" CITATION.cff | head -n1)
+
+          echo "has_cff=true" >> "$GITHUB_OUTPUT"
+          echo "pkg_version=${PKG_VERSION}" >> "$GITHUB_OUTPUT"
+          echo "cff_version=${CFF_VERSION}" >> "$GITHUB_OUTPUT"
+
+          if [[ -n "${CFF_VERSION}" && "${PKG_VERSION}" == "${CFF_VERSION}" ]]; then
+            echo "version_match=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "version_match=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Update CITATION.cff package version
+        if: >-
+          ${{
+            github.event_name != 'pull_request'
+            && steps.citation_check.outputs.has_cff == 'true'
+            && steps.citation_check.outputs.version_match != 'true'
+          }}
+        run: |
+          library(cffr)
+          pkg_version <- as.character(read.dcf("DESCRIPTION", fields = "Version")[1, "Version"])
+          cff <- cff_read("CITATION.cff")
+          cff <- cff_modify(cff, version = pkg_version)
+          writeLines(enc2utf8(capture.output(print(cff))), "CITATION.cff")
+        shell: Rscript {0}
+
+      - name: Commit CITATION.cff version update
+        if: >-
+          ${{
+            github.event_name != 'pull_request'
+            && steps.citation_check.outputs.has_cff == 'true'
+            && steps.citation_check.outputs.version_match != 'true'
+          }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config --local user.name "github-actions[bot]"
+          git config --local user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add CITATION.cff
+          git diff --cached --quiet && exit 0
+          git commit -m "Update CITATION.cff version to match DESCRIPTION"
+          git push
 
       - name: Cache R packages
         uses: actions/cache@v4
@@ -253,4 +313,3 @@ jobs:
       - name: Deploy to GitHub Pages
         id: deployment
         uses: actions/deploy-pages@v4
-
