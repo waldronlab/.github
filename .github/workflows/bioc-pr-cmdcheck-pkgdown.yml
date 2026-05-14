@@ -113,35 +113,45 @@ jobs:
       - name: Query dependencies
         run: |
           options(repos = c(CRAN = Sys.getenv("CRAN")))
-          BiocManager::install(c("remotes", "rcmdcheck", "BiocCheck", "covr", "cffr", "V8"))
+          BiocManager::install(c("remotes", "rcmdcheck", "BiocCheck", "covr", "cffr", "V8", "yaml"))
           saveRDS(remotes::dev_package_deps(dependencies = TRUE), ".github/depends.Rds", version = 2)
         shell: Rscript {0}
 
       - name: Check CITATION.cff version matches DESCRIPTION
         id: citation_check
         if: ${{ github.event_name != 'pull_request' }}
-        shell: bash
+        shell: Rscript {0}
         run: |
-          set -euo pipefail
+          pkg_version <- as.character(read.dcf("DESCRIPTION", fields = "Version")[1, "Version"])
+          output_file <- Sys.getenv("GITHUB_OUTPUT")
 
-          if [[ ! -f "CITATION.cff" ]]; then
-            echo "has_cff=false" >> "$GITHUB_OUTPUT"
-            echo "version_match=true" >> "$GITHUB_OUTPUT"
-            exit 0
-          fi
+          if (!file.exists("CITATION.cff")) {
+            writeLines(
+              c(
+                "has_cff=false",
+                "version_match=true",
+                paste0("pkg_version=", pkg_version)
+              ),
+              output_file
+            )
+            quit(save = "no")
+          }
 
-          PKG_VERSION=$(grep '^Version:' DESCRIPTION | sed 's/^Version:[[:space:]]*//')
-          CFF_VERSION=$(sed -nE "s/^version:[[:space:]]*['\"]?([^'\"]+)['\"]?[[:space:]]*$/\1/p" CITATION.cff | head -n1)
+          cff_version <- tryCatch(
+            as.character(cffr::cff_read("CITATION.cff")$version),
+            error = function(e) ""
+          )
+          version_match <- nzchar(cff_version) && identical(pkg_version, cff_version)
 
-          echo "has_cff=true" >> "$GITHUB_OUTPUT"
-          echo "pkg_version=${PKG_VERSION}" >> "$GITHUB_OUTPUT"
-          echo "cff_version=${CFF_VERSION}" >> "$GITHUB_OUTPUT"
-
-          if [[ -n "${CFF_VERSION}" && "${PKG_VERSION}" == "${CFF_VERSION}" ]]; then
-            echo "version_match=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "version_match=false" >> "$GITHUB_OUTPUT"
-          fi
+          writeLines(
+            c(
+              "has_cff=true",
+              paste0("pkg_version=", pkg_version),
+              paste0("cff_version=", cff_version),
+              paste0("version_match=", tolower(as.character(version_match)))
+            ),
+            output_file
+          )
 
       - name: Update CITATION.cff package version
         if: >-
@@ -151,11 +161,10 @@ jobs:
             && steps.citation_check.outputs.version_match != 'true'
           }}
         run: |
-          library(cffr)
           pkg_version <- as.character(read.dcf("DESCRIPTION", fields = "Version")[1, "Version"])
-          cff <- cff_read("CITATION.cff")
-          cff <- cff_modify(cff, version = pkg_version)
-          writeLines(enc2utf8(capture.output(print(cff))), "CITATION.cff")
+          cff <- cffr::cff_read("CITATION.cff")
+          cff$version <- pkg_version
+          yaml::write_yaml(as.list(cff), "CITATION.cff", fileEncoding = "UTF-8")
         shell: Rscript {0}
 
       - name: Commit CITATION.cff version update
@@ -171,7 +180,10 @@ jobs:
           git config --local user.name "github-actions[bot]"
           git config --local user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add CITATION.cff
-          git diff --cached --quiet && exit 0
+          if git diff --cached --quiet; then
+            echo "No CITATION.cff changes to commit"
+            exit 0
+          fi
           git commit -m "Update CITATION.cff version to match DESCRIPTION"
           git push
 
