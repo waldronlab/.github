@@ -138,27 +138,26 @@ jobs:
               ),
               output_file
             )
-            quit(save = "no")
+          } else {
+            cff_version <- tryCatch(
+              as.character(cffr::cff_read("CITATION.cff")$version),
+              error = function(e) {
+                warning("Unable to parse CITATION.cff: ", conditionMessage(e))
+                ""
+              }
+            )
+            version_match <- nzchar(cff_version) && identical(pkg_version, cff_version)
+
+            writeLines(
+              c(
+                "has_cff=true",
+                paste0("pkg_version=", pkg_version),
+                paste0("cff_version=", cff_version),
+                paste0("version_match=", tolower(as.character(version_match)))
+              ),
+              output_file
+            )
           }
-
-          cff_version <- tryCatch(
-            as.character(cffr::cff_read("CITATION.cff")$version),
-            error = function(e) {
-              message("Unable to parse CITATION.cff: ", conditionMessage(e))
-              ""
-            }
-          )
-          version_match <- nzchar(cff_version) && identical(pkg_version, cff_version)
-
-          writeLines(
-            c(
-              "has_cff=true",
-              paste0("pkg_version=", pkg_version),
-              paste0("cff_version=", cff_version),
-              paste0("version_match=", tolower(as.character(version_match)))
-            ),
-            output_file
-          )
 
       - name: Update CITATION.cff package version
         if: >-
