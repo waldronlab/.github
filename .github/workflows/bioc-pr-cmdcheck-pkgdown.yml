@@ -122,7 +122,11 @@ jobs:
         if: ${{ github.event_name != 'pull_request' }}
         shell: Rscript {0}
         run: |
-          pkg_version <- as.character(read.dcf("DESCRIPTION", fields = "Version")[1, "Version"])
+          desc <- read.dcf("DESCRIPTION")
+          if (!("Version" %in% colnames(desc))) {
+            stop("DESCRIPTION is missing required 'Version' field.")
+          }
+          pkg_version <- as.character(desc[1, "Version"])
           output_file <- Sys.getenv("GITHUB_OUTPUT")
 
           if (!file.exists("CITATION.cff")) {
@@ -139,7 +143,10 @@ jobs:
 
           cff_version <- tryCatch(
             as.character(cffr::cff_read("CITATION.cff")$version),
-            error = function(e) ""
+            error = function(e) {
+              message("Unable to parse CITATION.cff: ", conditionMessage(e))
+              ""
+            }
           )
           version_match <- nzchar(cff_version) && identical(pkg_version, cff_version)
 
@@ -165,7 +172,7 @@ jobs:
         run: |
           cff <- cffr::cff_read("CITATION.cff")
           cff <- cffr::cff_modify(cff, version = Sys.getenv("PKG_VERSION"))
-          cffr::cff_write(cff, outfile = "CITATION.cff", validate = FALSE, verbose = FALSE)
+          cffr::cff_write(cff, outfile = "CITATION.cff", validate = TRUE, verbose = FALSE)
         shell: Rscript {0}
 
       - name: Commit CITATION.cff version update
