@@ -113,7 +113,7 @@ jobs:
       - name: Query dependencies
         run: |
           options(repos = c(CRAN = Sys.getenv("CRAN")))
-          BiocManager::install(c("remotes", "rcmdcheck", "BiocCheck", "covr", "cffr", "V8", "yaml"))
+          BiocManager::install(c("remotes", "rcmdcheck", "BiocCheck", "covr", "cffr", "V8"))
           saveRDS(remotes::dev_package_deps(dependencies = TRUE), ".github/depends.Rds", version = 2)
         shell: Rscript {0}
 
@@ -160,11 +160,12 @@ jobs:
             && steps.citation_check.outputs.has_cff == 'true'
             && steps.citation_check.outputs.version_match != 'true'
           }}
+        env:
+          PKG_VERSION: ${{ steps.citation_check.outputs.pkg_version }}
         run: |
-          pkg_version <- as.character(read.dcf("DESCRIPTION", fields = "Version")[1, "Version"])
           cff <- cffr::cff_read("CITATION.cff")
-          cff$version <- pkg_version
-          yaml::write_yaml(as.list(cff), "CITATION.cff", fileEncoding = "UTF-8")
+          cff <- cffr::cff_modify(cff, version = Sys.getenv("PKG_VERSION"))
+          cffr::cff_write(cff, outfile = "CITATION.cff", validate = FALSE, verbose = FALSE)
         shell: Rscript {0}
 
       - name: Commit CITATION.cff version update
