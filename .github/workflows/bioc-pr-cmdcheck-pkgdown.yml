@@ -182,6 +182,7 @@ jobs:
             && needs.set-matrix.outputs.is_release_branch == 'true'
           }}
         run: |
+          Rscript -e 'options(repos = c(CRAN = Sys.getenv("CRAN"))); if (!requireNamespace("pkgdown", quietly = TRUE)) BiocManager::install("pkgdown", ask = FALSE)'
           PATH=$PATH:$HOME/bin/ Rscript -e 'pkgdown::build_site()'
 
       - name: Upload pkgdown artifact
