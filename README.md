@@ -42,3 +42,72 @@ jobs:
 | `enable_pkgdown` | `boolean` | `true` | Build and deploy pkgdown site on `RELEASE_*` branch pushes |
 | `enable_docker` | `boolean` | `true` | Build and push Docker image on `devel` branch pushes |
 | `dockerfile_path` | `string` | `inst/docker/pkg/Dockerfile` | Path to the Dockerfile to build |
+
+### `claude.yml`
+
+A reusable workflow that runs [Claude Code](https://code.claude.com/docs/en/github-actions) on issues and pull requests. Claude responds when someone with **write access** to the repository:
+
+- mentions `@claude` in an issue, an issue or PR comment, an inline PR review comment, or a PR review;
+- opens an issue whose title or body contains `@claude`; or
+- adds the label `claude` to an issue. Use this instead of assigning the issue to Claude, which GitHub doesn't allow on private organization repositories.
+
+Claude can answer questions, review code, and implement changes on a new `claude/...` branch for you to turn into a PR.
+
+**Authentication and billing.** Runs are billed to the Waldron Lab Claude API workspace through [workload identity federation](https://platform.claude.com/docs/en/manage-claude/workload-identity-federation). Each run exchanges its GitHub OIDC token for an Anthropic token that expires after about 10 minutes. There is no API key or repository secret to set up. The federation rule accepts only repositories in the `waldronlab` organization: a workflow in any other repository that calls this file is refused.
+
+#### Enable it in a repository
+
+1. **Install the Claude GitHub App** on the repository: <https://github.com/apps/claude>. (Organization owners can choose "All repositories" or add repositories one at a time.)
+2. **Add this file** as `.github/workflows/claude.yml` in the repository:
+
+   ```yaml
+   name: claude
+   on:
+     issue_comment:
+       types: [created]
+     pull_request_review_comment:
+       types: [created]
+     pull_request_review:
+       types: [submitted]
+     issues:
+       types: [opened, labeled]
+   permissions:
+     contents: write
+     pull-requests: write
+     issues: write
+     id-token: write
+     actions: read
+   jobs:
+     claude:
+       uses: waldronlab/.github/.github/workflows/claude.yml@devel
+   ```
+
+   The `permissions` block is required: a reusable workflow can't have more permissions than its caller, and `id-token: write` is what allows the federation exchange.
+3. **Test it** by commenting `@claude what does this repository do?` on any issue.
+
+#### Inputs
+
+| Input | Type | Default | Description |
+|---|---|---|---|
+| `trigger_phrase` | `string` | `@claude` | Phrase that invokes Claude |
+| `label_trigger` | `string` | `claude` | Issue label that invokes Claude |
+| `claude_args` | `string` | `""` | Extra Claude Code CLI arguments, e.g. `--max-turns 10` |
+| `timeout_minutes` | `number` | `30` | Job timeout; also caps spend per run |
+
+Example with inputs:
+
+```yaml
+jobs:
+  claude:
+    uses: waldronlab/.github/.github/workflows/claude.yml@devel
+    with:
+      claude_args: "--max-turns 10"
+      timeout_minutes: 15
+```
+
+#### Notes
+
+- Comments on other issues and PRs also start this workflow, but the job is skipped unless it was invoked. Skipped runs use no runner minutes; they do appear in the Actions tab.
+- Workflows triggered from fork pull requests can't get an OIDC token, a GitHub security restriction, so Claude may not run on inline review comments on fork PRs. Comments in the PR conversation thread are unaffected.
+- Don't add an `ANTHROPIC_API_KEY` secret or `anthropic_api_key` input to a repository using this workflow: a static key takes precedence over federation, and the key would then be stored in the repository.
+
