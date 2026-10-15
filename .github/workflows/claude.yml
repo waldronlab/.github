@@ -4,14 +4,20 @@ name: Claude Code (reusable)
 # Authenticates to the Claude API with workload identity federation: the
 # calling job's GitHub OIDC token is exchanged for a short-lived Anthropic
 # token, so no API key is stored anywhere. The IDs below are identifiers,
-# not credentials. The federation rule in the Claude Console accepts tokens
-# only from repositories in the waldronlab organization.
+# not credentials. The default federation rule in the Claude Console accepts
+# tokens only from repositories in the waldronlab organization; repositories
+# owned by another account pass their own rule via `federation_rule_id`.
 #
 # Usage: see "claude.yml" in this repository's README.
 
 on:
   workflow_call:
     inputs:
+      federation_rule_id:
+        description: "Claude Console federation rule matching the calling repository's owner. The default is the waldronlab rule."
+        required: false
+        type: string
+        default: "fdrl_01X83Zk3FZmVxU51RcTyhhkP"
       trigger_phrase:
         description: "Phrase in a comment, issue body or issue title that invokes Claude"
         required: false
@@ -60,7 +66,7 @@ jobs:
 
       - uses: anthropics/claude-code-action@v1
         with:
-          anthropic_federation_rule_id: fdrl_01X83Zk3FZmVxU51RcTyhhkP
+          anthropic_federation_rule_id: ${{ inputs.federation_rule_id }}
           anthropic_organization_id: 9e396bea-64ac-4ec3-b30a-483bbbf0b805
           anthropic_service_account_id: svac_0196kZwByri8hG9BLAZD2R7H
           anthropic_workspace_id: wrkspc_01Cb3FmbDkgCwFVg3NqyYDST
