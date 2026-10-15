@@ -89,6 +89,7 @@ Claude can answer questions, review code, and implement changes on a new `claude
 
 | Input | Type | Default | Description |
 |---|---|---|---|
+| `federation_rule_id` | `string` | waldronlab rule | Claude Console federation rule for the calling repository's owner; only needed outside `waldronlab` (see below) |
 | `trigger_phrase` | `string` | `@claude` | Phrase that invokes Claude |
 | `label_trigger` | `string` | `claude` | Issue label that invokes Claude |
 | `claude_args` | `string` | `""` | Extra Claude Code CLI arguments, e.g. `--max-turns 10` |
@@ -104,6 +105,29 @@ jobs:
       claude_args: "--max-turns 10"
       timeout_minutes: 15
 ```
+
+#### Repositories outside the waldronlab organization
+
+This workflow is public, so repositories owned by other GitHub accounts can call it too. The default federation rule accepts only `waldronlab` repositories, so each additional account needs:
+
+1. Its own federation rule in the Claude Console (**Settings → Workload identity**), matching subject prefix `repo:ACCOUNT/` (keep the trailing slash) or the claim `repository_owner` = `ACCOUNT`, with audience `https://api.anthropic.com`.
+2. The Claude GitHub App installed on that account.
+3. The caller workflow above, passing the account's rule:
+
+   ```yaml
+   jobs:
+     claude:
+       uses: waldronlab/.github/.github/workflows/claude.yml@devel
+       with:
+         federation_rule_id: fdrl_...
+   ```
+
+| Account | Federation rule |
+|---|---|
+| `waldronlab` | `fdrl_01X83Zk3FZmVxU51RcTyhhkP` (default) |
+| `lwaldron` | `fdrl_014i6mVkMJG7N84HBzdnr9ch` |
+
+Changes to this workflow affect every repository that calls it, including those outside the organization.
 
 #### Notes
 
