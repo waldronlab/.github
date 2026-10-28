@@ -12,6 +12,8 @@ Reusable GitHub Actions workflows live in [`.github/workflows/`](.github/workflo
 
 ### `bioc-pr-cmdcheck-pkgdown.yml`
 
+> **Deprecated.** Use the Bioconductor reusable workflows at [Bioconductor/workflows](https://github.com/Bioconductor/workflows) instead: copy its [`ci.yml`](https://github.com/Bioconductor/workflows/blob/main/ci.yml) template to `.github/workflows/ci.yml`, or build a customized one (Codecov, pkgdown) with the [workflow generator](https://bioconductor.github.io/workflows/). It runs `R CMD check` and `BiocCheck` in the official Bioconductor container, choosing the Bioconductor version from the branch name. It has no Docker Hub step; repositories that push a Docker image need a separate workflow for that. This workflow stays in place for repositories that still call it but will not be maintained.
+
 A reusable workflow for Bioconductor R packages that performs the following steps on both pull requests and branch pushes:
 
 1. **`R CMD check`** — runs [`rcmdcheck`](https://rcmdcheck.r-lib.org/) against the package.
@@ -43,24 +45,22 @@ jobs:
 | `enable_docker` | `boolean` | `true` | Build and push Docker image on `devel` branch pushes |
 | `dockerfile_path` | `string` | `inst/docker/pkg/Dockerfile` | Path to the Dockerfile to build |
 
-### `claude.yml`
+### Claude Code: `claude.yml` and `claude-review.yml`
 
-A reusable workflow that runs [Claude Code](https://code.claude.com/docs/en/github-actions) on issues and pull requests. Claude responds when someone with **write access** to the repository:
+Two reusable workflows run [Claude Code](https://code.claude.com/docs/en/github-actions) on issues and pull requests:
 
-- mentions `@claude` in an issue, an issue or PR comment, an inline PR review comment, or a PR review;
-- opens an issue whose title or body contains `@claude`; or
-- adds the label `claude` to an issue. Use this instead of assigning the issue to Claude, which GitHub doesn't allow on private organization repositories.
+| | `claude.yml` | `claude-review.yml` |
+|---|---|---|
+| Runs when | someone with write access mentions `@claude` or adds the `claude` label | a pull request is opened or marked ready for review |
+| Does | whatever was asked: answers questions, reviews code, implements changes on a new `claude/...` branch | reviews the pull request and comments |
+| Repository permissions | write | read, plus pull request comments |
 
-Claude can answer questions, review code, and implement changes on a new `claude/...` branch for you to turn into a PR.
+They are separate so that the automatic review, which nobody asks for, runs with read-only access, and so that a repository can use `@claude` without automatic reviews.
 
-**Authentication and billing.** In the `waldronlab` organization, runs use the organization secret `CLAUDE_CODE_OAUTH_TOKEN`, a Claude subscription token made with `claude setup-token`, so they count against that subscription's usage limits rather than costing money. The monthly API credit that comes with Claude Max and Team plans can't be used instead: it doesn't cover Claude Code, and the GitHub Action counts as Claude Code.
+#### Enable them in a repository
 
-If the caller doesn't pass the secret, the workflow falls back to [workload identity federation](https://platform.claude.com/docs/en/manage-claude/workload-identity-federation), billed to the Waldron Lab Claude API workspace. Each run exchanges its GitHub OIDC token for an Anthropic token that expires after about 10 minutes. The federation rule accepts only repositories in the `waldronlab` organization.
-
-#### Enable it in a repository
-
-1. **Install the Claude GitHub App** on the repository: <https://github.com/apps/claude>. (Organization owners can choose "All repositories" or add repositories one at a time.)
-2. **Add this file** as `.github/workflows/claude.yml` in the repository:
+1. **Install the Claude GitHub App** on the repository: <https://github.com/apps/claude>. (It is installed on all `waldronlab` repositories.)
+2. **Add this file** as `.github/workflows/claude.yml`. Delete the `review` job if you only want `@claude`.
 
    ```yaml
    name: claude
@@ -73,100 +73,51 @@ If the caller doesn't pass the secret, the workflow falls back to [workload iden
        types: [submitted]
      issues:
        types: [opened, labeled]
-   permissions:
-     contents: write
-     pull-requests: write
-     issues: write
-     id-token: write
-     actions: read
+     pull_request:
+       types: [opened, ready_for_review]
    jobs:
      claude:
+       if: github.event_name != 'pull_request'
+       permissions:
+         contents: write
+         pull-requests: write
+         issues: write
+         id-token: write
+         actions: read
        uses: waldronlab/.github/.github/workflows/claude.yml@devel
+       secrets: inherit
+     review:
+       if: github.event_name == 'pull_request'
+       permissions:
+         contents: read
+         pull-requests: write
+         id-token: write
+       uses: waldronlab/.github/.github/workflows/claude-review.yml@devel
        secrets: inherit
    ```
 
-   The `permissions` block is required: a reusable workflow can't have more permissions than its caller, and the action needs `id-token: write`. `secrets: inherit` passes the organization's `CLAUDE_CODE_OAUTH_TOKEN`; leave it out to use federation instead.
-3. **Test it** by commenting `@claude what does this repository do?` on any issue.
+   The `permissions` blocks are required: a reusable workflow can't have more permissions than its caller, and the action needs `id-token: write` to get its GitHub App token. `secrets: inherit` passes the `CLAUDE_CODE_OAUTH_TOKEN` secret.
+3. **Merge it into the default branch before testing.** The action refuses to run on a pull request that adds or changes its own workflow file, and logs "Workflow validation failed" (the run still shows as successful).
+4. **Test it** by commenting `@claude what does this repository do?` on any issue, and by opening a small pull request.
 
-#### Inputs
+#### Authentication and usage
+
+Runs use the organization secret `CLAUDE_CODE_OAUTH_TOKEN`, a Claude subscription token made with `claude setup-token`. They count against that subscription's usage limits and cost nothing extra.
+
+The monthly API credit that comes with Claude Team and Max plans can't pay for these runs: it doesn't cover Claude Code, and the GitHub Action counts as Claude Code. Runs billed to that credit fail with "Credit balance too low".
+
+The token acts as the person who created it. Anyone who can edit workflows in a repository that receives it can use it, so pass it only to repositories whose writers you trust. If it leaks or expires, make a new one with `claude setup-token` and replace the secret.
+
+#### `claude.yml` inputs
 
 | Input | Type | Default | Description |
 |---|---|---|---|
-| `federation_rule_id` | `string` | waldronlab rule | Claude Console federation rule for the calling repository's owner; only needed outside `waldronlab` (see below) |
-| `trigger_phrase` | `string` | `@claude` | Phrase that invokes Claude |
-| `label_trigger` | `string` | `claude` | Issue label that invokes Claude |
+| `trigger_phrase` | `string` | `@claude` | Phrase in a comment, issue body or issue title that invokes Claude |
+| `label_trigger` | `string` | `claude` | Issue label that invokes Claude. Use it instead of assigning the issue to Claude, which GitHub doesn't allow on private organization repositories. |
 | `claude_args` | `string` | `""` | Extra Claude Code CLI arguments, e.g. `--max-turns 10` |
-| `timeout_minutes` | `number` | `30` | Job timeout; also caps spend per run |
+| `timeout_minutes` | `number` | `30` | Job timeout; also caps usage per run |
 
-Example with inputs:
-
-```yaml
-jobs:
-  claude:
-    uses: waldronlab/.github/.github/workflows/claude.yml@devel
-    with:
-      claude_args: "--max-turns 10"
-      timeout_minutes: 15
-```
-
-#### Repositories outside the waldronlab organization
-
-This workflow is public, so repositories owned by other GitHub accounts can call it too. The default federation rule accepts only `waldronlab` repositories, so each additional account needs:
-
-1. Its own federation rule in the Claude Console (**Settings → Workload identity**), matching subject prefix `repo:ACCOUNT/` (keep the trailing slash) or the claim `repository_owner` = `ACCOUNT`, with audience `https://api.anthropic.com`.
-2. The Claude GitHub App installed on that account.
-3. The caller workflow above, passing the account's rule:
-
-   ```yaml
-   jobs:
-     claude:
-       uses: waldronlab/.github/.github/workflows/claude.yml@devel
-       with:
-         federation_rule_id: fdrl_...
-   ```
-
-| Account | Federation rule |
-|---|---|
-| `waldronlab` | `fdrl_01X83Zk3FZmVxU51RcTyhhkP` (default) |
-| `lwaldron` | `fdrl_014i6mVkMJG7N84HBzdnr9ch` |
-
-Changes to this workflow affect every repository that calls it, including those outside the organization.
-
-#### Notes
-
-- Comments on other issues and PRs also start this workflow, but the job is skipped unless it was invoked. Skipped runs use no runner minutes; they do appear in the Actions tab.
-- Workflows triggered from fork pull requests can't get an OIDC token, a GitHub security restriction, so Claude may not run on inline review comments on fork PRs. Comments in the PR conversation thread are unaffected.
-- Don't add an `ANTHROPIC_API_KEY` secret or `anthropic_api_key` input to a repository using this workflow: a static key takes precedence over federation, and the key would then be stored in the repository.
-- The subscription token acts as the person who created it. Anyone who can edit workflows in a repository that receives it can use it, so pass it only to repositories whose writers you trust. Replace it with a new `claude setup-token` if it leaks or expires.
-
-### `claude-review.yml`
-
-A reusable workflow that has Claude review a pull request once, when it is opened or marked ready for review. Claude puts specific issues in inline comments and posts one summary comment. It doesn't re-review on every push, to save usage; comment `@claude review` for another review (this needs `claude.yml` in the repository too).
-
-It skips draft PRs, PRs opened by bots, and PRs from forks, which can't receive secrets. Someone with write access can still ask for a review of a fork PR with `@claude review`.
-
-It authenticates only with the `CLAUDE_CODE_OAUTH_TOKEN` organization secret (see `claude.yml` above).
-
-#### Enable it in a repository
-
-With the Claude GitHub App installed, add this file as `.github/workflows/claude-review.yml`:
-
-```yaml
-name: claude-review
-on:
-  pull_request:
-    types: [opened, ready_for_review]
-permissions:
-  contents: read
-  pull-requests: write
-  id-token: write
-jobs:
-  review:
-    uses: waldronlab/.github/.github/workflows/claude-review.yml@devel
-    secrets: inherit
-```
-
-#### Inputs
+#### `claude-review.yml` inputs
 
 | Input | Type | Default | Description |
 |---|---|---|---|
@@ -174,14 +125,34 @@ jobs:
 | `claude_args` | `string` | `""` | Extra Claude Code CLI arguments, e.g. `--model opus` |
 | `timeout_minutes` | `number` | `20` | Job timeout |
 
-Example for an R package:
+The review runs once per pull request, not on every push, to save usage. Comment `@claude review` for another review. It skips draft pull requests, pull requests opened by bots, and pull requests from forks, which can't receive secrets; someone with write access can still ask for a review of a fork pull request with `@claude review`.
+
+Example inputs for an R package, in the caller file above:
 
 ```yaml
-jobs:
   review:
+    if: github.event_name == 'pull_request'
+    permissions:
+      contents: read
+      pull-requests: write
+      id-token: write
     uses: waldronlab/.github/.github/workflows/claude-review.yml@devel
     secrets: inherit
     with:
       review_focus: "This is a Bioconductor package: check that exported functions are documented and that new code follows Bioconductor guidelines."
 ```
 
+#### Repositories outside the waldronlab organization
+
+These workflows are public, so repositories owned by other GitHub accounts can call them too. Organization secrets don't reach them, so each such repository needs:
+
+1. The Claude GitHub App installed on that account.
+2. A repository secret `CLAUDE_CODE_OAUTH_TOKEN`, made with `claude setup-token` by the account owner.
+3. The caller file above.
+
+Changes to these workflows affect every repository that calls them, including those outside the organization.
+
+#### Notes
+
+- Comments on issues and pull requests that don't mention `@claude` also start `claude.yml`, but the job is skipped. Skipped runs use no runner minutes; they do appear in the Actions tab.
+- Don't add an `ANTHROPIC_API_KEY` secret or `anthropic_api_key` input: the action would use the API key instead of the subscription token.

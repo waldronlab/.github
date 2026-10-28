@@ -1,26 +1,15 @@
 name: Claude Code (reusable)
 
 # Runs Claude Code in response to @claude mentions or a `claude` label.
-# Authenticates with the CLAUDE_CODE_OAUTH_TOKEN secret when the caller
-# passes it (a Claude subscription token from `claude setup-token`), so runs
-# count against that subscription's usage limits. Without it, falls back to
-# workload identity federation: the calling job's GitHub OIDC token is
-# exchanged for a short-lived Anthropic token billed to the Claude API
-# workspace. The federation IDs below are identifiers, not credentials. The
-# default federation rule accepts tokens only from repositories in the
-# waldronlab organization; repositories owned by another account pass their
-# own rule via `federation_rule_id`.
+# Authenticates with the CLAUDE_CODE_OAUTH_TOKEN secret, a Claude
+# subscription token from `claude setup-token`, so runs count against that
+# subscription's usage limits. Callers pass it with `secrets: inherit`.
 #
-# Usage: see "claude.yml" in this repository's README.
+# Usage: see "Claude Code" in this repository's README.
 
 on:
   workflow_call:
     inputs:
-      federation_rule_id:
-        description: "Claude Console federation rule matching the calling repository's owner. The default is the waldronlab rule."
-        required: false
-        type: string
-        default: "fdrl_01X83Zk3FZmVxU51RcTyhhkP"
       trigger_phrase:
         description: "Phrase in a comment, issue body or issue title that invokes Claude"
         required: false
@@ -37,14 +26,14 @@ on:
         type: string
         default: ""
       timeout_minutes:
-        description: "Job timeout, which also caps spend per run"
+        description: "Job timeout, which also caps usage per run"
         required: false
         type: number
         default: 30
     secrets:
       CLAUDE_CODE_OAUTH_TOKEN:
-        description: "Claude subscription token. Takes precedence over federation when set."
-        required: false
+        description: "Claude subscription token from `claude setup-token`"
+        required: true
 
 jobs:
   claude:
@@ -64,7 +53,7 @@ jobs:
       contents: write
       pull-requests: write
       issues: write
-      id-token: write # required for the OIDC token used by federation
+      id-token: write # the action exchanges an OIDC token for the Claude GitHub App token
       actions: read # lets Claude read CI results on PRs
     steps:
       - uses: actions/checkout@v6
@@ -74,12 +63,6 @@ jobs:
       - uses: anthropics/claude-code-action@v1
         with:
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
-          # Federation inputs are passed only without a token, so the action
-          # doesn't warn that the token overrides them.
-          anthropic_federation_rule_id: ${{ !secrets.CLAUDE_CODE_OAUTH_TOKEN && inputs.federation_rule_id || '' }}
-          anthropic_organization_id: ${{ !secrets.CLAUDE_CODE_OAUTH_TOKEN && '9e396bea-64ac-4ec3-b30a-483bbbf0b805' || '' }}
-          anthropic_service_account_id: ${{ !secrets.CLAUDE_CODE_OAUTH_TOKEN && 'svac_0196kZwByri8hG9BLAZD2R7H' || '' }}
-          anthropic_workspace_id: ${{ !secrets.CLAUDE_CODE_OAUTH_TOKEN && 'wrkspc_01Cb3FmbDkgCwFVg3NqyYDST' || '' }}
           trigger_phrase: ${{ inputs.trigger_phrase }}
           label_trigger: ${{ inputs.label_trigger }}
           claude_args: ${{ inputs.claude_args }}
