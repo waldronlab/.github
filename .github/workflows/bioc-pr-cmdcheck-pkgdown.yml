@@ -1,3 +1,5 @@
+# DEPRECATED: use the Bioconductor reusable workflows at
+# https://github.com/Bioconductor/workflows instead. See this repository's README.
 name: Bioc PR CMD check & (optional) pkgdown + Docker
 
 on:

@@ -10,7 +10,7 @@ name: Claude PR review (reusable)
 # limits. Draft PRs, bot PRs and PRs from forks are skipped: secrets aren't
 # available to fork PRs.
 #
-# Usage: see "claude-review.yml" in this repository's README.
+# Usage: see "Claude Code" in this repository's README.
 
 on:
   workflow_call:
