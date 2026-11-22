@@ -6,6 +6,29 @@ This is the [special `.github` repository](https://docs.github.com/en/organizati
 
 [`profile/README.md`](profile/README.md) is displayed on the Waldron Lab's public GitHub organization page. It introduces the lab, its research focus (cancer genomics, microbiome profiling, and biostatistics), and community resources such as [BugSigDB](https://bugsigdb.org/) and the [Microbiome Virtual International Forum](https://microbiome-vif.org/).
 
+## Setting up an R package repository
+
+[`waldronlab/bioc-package-template`](https://github.com/waldronlab/bioc-package-template) has the two workflows a Waldron Lab R/Bioconductor package needs:
+
+- `.github/workflows/ci.yml`: `R CMD check`, `BiocCheck` and test coverage (Codecov) in the Bioconductor container, from [Bioconductor/workflows](https://github.com/Bioconductor/workflows). It can also build a pkgdown site.
+- `.github/workflows/claude.yml`: Claude Code responds to `@claude` and reviews each new pull request once (see [below](#claude-code-claudeyml-and-claude-reviewyml)).
+
+**New package.** On the template's page, choose **Use this template → Create a new repository** with owner `waldronlab`, then follow "Setting up a new repository" in [its README](https://github.com/waldronlab/bioc-package-template#setting-up-a-new-repository).
+
+**Existing repository**, or one created without the template. Copy the two workflow files into the repository's default branch:
+
+```sh
+mkdir -p .github/workflows
+for f in ci.yml claude.yml; do
+  curl -fsSL -o .github/workflows/$f \
+    https://raw.githubusercontent.com/waldronlab/bioc-package-template/devel/.github/workflows/$f
+done
+```
+
+Commit and push them directly, or merge them before testing Claude: the Claude action won't run on a pull request that changes its own workflow file. Nothing else is needed in `waldronlab`: the Claude GitHub App is installed on all repositories, and `CODECOV_TOKEN` and `CLAUDE_CODE_OAUTH_TOKEN` are organization secrets.
+
+**pkgdown.** In `ci.yml`, set `enable_pkgdown: true` and uncomment the `permissions:` block, then set GitHub Pages to deploy from GitHub Actions and allow deployment from `RELEASE_*` branches ([steps](https://github.com/Bioconductor/workflows/blob/main/bioccheck_usage.md#repository-configuration-for-optional-features)). The site is built and deployed only on pushes to `RELEASE_*` branches, so a package that hasn't had a Bioconductor release yet gets no site until it does. See "Optional checks" in the [template README](https://github.com/waldronlab/bioc-package-template#optional-checks) for other settings.
+
 ## Reusable Workflows
 
 Reusable GitHub Actions workflows live in [`.github/workflows/`](.github/workflows/) and can be called from any repository in the organization.
@@ -85,7 +108,8 @@ They are separate so that the automatic review, which nobody asks for, runs with
          id-token: write
          actions: read
        uses: waldronlab/.github/.github/workflows/claude.yml@devel
-       secrets: inherit
+       secrets:
+         CLAUDE_CODE_OAUTH_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
      review:
        if: github.event_name == 'pull_request'
        permissions:
@@ -93,10 +117,11 @@ They are separate so that the automatic review, which nobody asks for, runs with
          pull-requests: write
          id-token: write
        uses: waldronlab/.github/.github/workflows/claude-review.yml@devel
-       secrets: inherit
+       secrets:
+         CLAUDE_CODE_OAUTH_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
    ```
 
-   The `permissions` blocks are required: a reusable workflow can't have more permissions than its caller, and the action needs `id-token: write` to get its GitHub App token. `secrets: inherit` passes the `CLAUDE_CODE_OAUTH_TOKEN` secret.
+   The `permissions` blocks are required: a reusable workflow can't have more permissions than its caller, and the action needs `id-token: write` to get its GitHub App token. The `secrets:` blocks pass the `CLAUDE_CODE_OAUTH_TOKEN` secret by name. Don't shorten them to `secrets: inherit`: that only reaches a reusable workflow in the same organization, so it fails in repositories outside `waldronlab`.
 3. **Merge it into the default branch before testing.** The action refuses to run on a pull request that adds or changes its own workflow file, and logs "Workflow validation failed" (the run still shows as successful).
 4. **Test it** by commenting `@claude what does this repository do?` on any issue, and by opening a small pull request.
 
@@ -116,6 +141,7 @@ The token acts as the person who created it. Anyone who can edit workflows in a 
 | `label_trigger` | `string` | `claude` | Issue label that invokes Claude. Use it instead of assigning the issue to Claude, which GitHub doesn't allow on private organization repositories. |
 | `claude_args` | `string` | `""` | Extra Claude Code CLI arguments, e.g. `--max-turns 10` |
 | `timeout_minutes` | `number` | `30` | Job timeout; also caps usage per run |
+| `review_focus` | `string` | `""` | Repository-specific review instructions, used on pull requests. Pass the same text as to `claude-review.yml` so that `@claude review` follows them too |
 
 #### `claude-review.yml` inputs
 
@@ -125,11 +151,24 @@ The token acts as the person who created it. Anyone who can edit workflows in a 
 | `claude_args` | `string` | `""` | Extra Claude Code CLI arguments, e.g. `--model opus` |
 | `timeout_minutes` | `number` | `20` | Job timeout |
 
-The review runs once per pull request, not on every push, to save usage. Comment `@claude review` for another review. It skips draft pull requests, pull requests opened by bots, and pull requests from forks, which can't receive secrets; someone with write access can still ask for a review of a fork pull request with `@claude review`.
+The review runs once per pull request, not on every push, to save usage. Comment `@claude review` for another review. That review runs in `claude.yml`, which gives Claude the same review instructions and `review_focus` (if you pass it to both workflows) and tells it to read the changes with `gh pr diff`. The differences: it runs with write access, it reports in its progress comment rather than a separate summary comment, and it follows anything else the comment asks. The automatic review skips draft pull requests, pull requests opened by bots, and pull requests from forks, which can't receive secrets; someone with write access can still ask for a review of a fork pull request with `@claude review`.
 
 Example inputs for an R package, in the caller file above:
 
 ```yaml
+  claude:
+    if: github.event_name != 'pull_request'
+    permissions:
+      contents: write
+      pull-requests: write
+      issues: write
+      id-token: write
+      actions: read
+    uses: waldronlab/.github/.github/workflows/claude.yml@devel
+    secrets:
+      CLAUDE_CODE_OAUTH_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+    with:
+      review_focus: "This is a Bioconductor package: check that exported functions are documented and that new code follows Bioconductor guidelines."
   review:
     if: github.event_name == 'pull_request'
     permissions:
@@ -137,7 +176,8 @@ Example inputs for an R package, in the caller file above:
       pull-requests: write
       id-token: write
     uses: waldronlab/.github/.github/workflows/claude-review.yml@devel
-    secrets: inherit
+    secrets:
+      CLAUDE_CODE_OAUTH_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
     with:
       review_focus: "This is a Bioconductor package: check that exported functions are documented and that new code follows Bioconductor guidelines."
 ```
@@ -148,7 +188,7 @@ These workflows are public, so repositories owned by other GitHub accounts can c
 
 1. The Claude GitHub App installed on that account.
 2. A repository secret `CLAUDE_CODE_OAUTH_TOKEN`, made with `claude setup-token` by the account owner.
-3. The caller file above.
+3. The caller file above, unchanged. It passes the secret by name; with `secrets: inherit` instead, the run fails before starting with "Secret CLAUDE_CODE_OAUTH_TOKEN is required, but not provided while calling", because `secrets: inherit` only reaches reusable workflows in the caller's own organization.
 
 Changes to these workflows affect every repository that calls them, including those outside the organization.
 
