@@ -151,7 +151,7 @@ The token acts as the person who created it. Anyone who can edit workflows in a 
 | `claude_args` | `string` | `""` | Extra Claude Code CLI arguments, e.g. `--model opus` |
 | `timeout_minutes` | `number` | `20` | Job timeout |
 
-The review runs once per pull request, not on every push, to save usage. Comment `@claude review` for another review. That review runs in `claude.yml`, which gives Claude the same review instructions and `review_focus` (if you pass it to both workflows) and tells it to read the changes with `gh pr diff`. The differences: it runs with write access, it reports in its progress comment rather than a separate summary comment, and it follows anything else the comment asks. The automatic review skips draft pull requests, pull requests opened by bots, and pull requests from forks, which can't receive secrets; someone with write access can still ask for a review of a fork pull request with `@claude review`.
+The review runs once per pull request, not on every push, to save usage. Comment `@claude review` for another review. That review runs in `claude.yml`, which gives Claude the same review instructions and `review_focus` (if you pass it to both workflows) and tells it to read the changes with `gh pr diff`. The differences: it runs with write access, it posts inline comments but puts its summary in its progress comment rather than a separate comment, and it follows anything else the comment asks. The automatic review skips draft pull requests, pull requests opened by bots, and pull requests from forks, which can't receive secrets; someone with write access can still ask for a review of a fork pull request with `@claude review`.
 
 Example inputs for an R package, in the caller file above:
 
